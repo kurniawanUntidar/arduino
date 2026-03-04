@@ -13,6 +13,32 @@ const int EC_CLK  = 13;
 const int EC_MOSI = 11;
 const int EC_MISO = 12;
 
+void executeCommand(uint8_t cmd, uint8_t* data, uint8_t len) {
+  switch (cmd) {
+    case CMD_CHECK_CONN:
+      sendResponse(CMD_CHECK_CONN, "Mega Ready");
+      break;
+
+    case CMD_GET_ID:
+      // Panggil fungsi SPI Bit-Banging yang kita buat sebelumnya
+      // Kirim balik ID chip ke Lazarus
+      break;
+      
+    case CMD_WRITE_BLOCK:
+      // Tulis data dari buffer ke Chip EC
+      sendResponse(0x04, "Write OK");
+      break;
+  }
+}
+
+void sendResponse(uint8_t cmd, String msg) {
+  Serial.write(HEADER_BYTE);
+  Serial.write(cmd);
+  Serial.write(msg.length());
+  Serial.print(msg);
+  // Tambahkan kalkulasi checksum untuk respon jika perlu
+}
+
 void setup() {
   Serial.begin(115200);
   pinMode(10, OUTPUT); // CS
@@ -23,9 +49,29 @@ void setup() {
 }
 
 void loop() {
-  if(Serial.available()>=1){
-    uint8_t data = Serial.read();
-    Serial.println(data);
-  }
 
+ if (Serial.available() > 3) { // Minimal Header + Cmd + Len
+    if (Serial.read() == HEADER_BYTE) {
+      //Serial.write(HEADER_BYTE);
+      uint8_t cmd = Serial.read();//Serial.write(cmd);
+      uint8_t len = Serial.read();//Serial.write(len);
+      uint8_t buffer[256];
+      uint8_t checksum = HEADER_BYTE ^ cmd ^ len;
+      
+//      for (int i = 0; i < len; i++) {
+//        while (!Serial.available()); // Tunggu byte data
+//        buffer[i] = Serial.read();
+//        checksum ^= buffer[i];
+//      }
+      
+     // while (!Serial.available()){
+      uint8_t receivedChecksum = Serial.read();//Serial.write(receivedChecksum );
+       if (checksum == receivedChecksum) {
+        executeCommand(cmd, buffer, len);
+      } else {
+        sendResponse(0xEE, "Error Checksum"); // Kode error
+      }
+    //  }
+    }
+ }
 }
