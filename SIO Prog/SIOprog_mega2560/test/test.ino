@@ -8,15 +8,15 @@
 #define CMD_WRITE_BLOCK  0x04
 
 // Definisikan Pin (Bisa dipindah sesuai kebutuhan konektor)
-const int EC_CS   = 10;
-const int EC_CLK  = 13;
-const int EC_MOSI = 11;
-const int EC_MISO = 12;
+const int EC_CS   = 2;
+const int EC_CLK  = 3;
+const int EC_MOSI = 4;
+const int EC_MISO = 5;
 
 void executeCommand(uint8_t cmd, uint8_t* data, uint8_t len) {
   switch (cmd) {
     case CMD_CHECK_CONN:
-      sendResponse(CMD_CHECK_CONN, "Mega Ready");
+      sendResponse(CMD_CHECK_CONN, "Device Connected");
       break;
 
     case CMD_GET_ID:
@@ -32,19 +32,27 @@ void executeCommand(uint8_t cmd, uint8_t* data, uint8_t len) {
 }
 
 void sendResponse(uint8_t cmd, String msg) {
+//-----------------arduino atmega328/168-------------------------//
+  uint8_t len = msg.length();
+  uint8_t checksum = HEADER_BYTE ^ cmd ^ len; // Mulai hitung dari header, cmd, dan len
   Serial.write(HEADER_BYTE);
   Serial.write(cmd);
   Serial.write(msg.length());
-  Serial.print(msg);
+  //Serial.print(msg);
+  for (int i = 0; i < len; i++) {
+    Serial.write(msg[i]);
+    checksum ^= msg[i]; // XOR setiap karakter dalam string
+  }
+  Serial.write(checksum); // Kirim byte terakhir sebagai checksum
   // Tambahkan kalkulasi checksum untuk respon jika perlu
 }
 
 void setup() {
   Serial.begin(115200);
-  pinMode(10, OUTPUT); // CS
-  pinMode(13, OUTPUT); // CLK
-  pinMode(11, OUTPUT); // MOSI
-  pinMode(12, INPUT);  // MISO
+  pinMode(2, OUTPUT); // CS
+  pinMode(3, OUTPUT); // CLK
+  pinMode(4, OUTPUT); // MOSI
+  pinMode(5, INPUT);  // MISO
 
 }
 
