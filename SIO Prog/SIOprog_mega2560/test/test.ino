@@ -17,9 +17,6 @@ const int EC_MISO = 12;
 
 void scanSPILines() {
   String report = "";
-  
-  // Tes 1: Cek apakah MISO "floating" atau tidak
-  // Jika MISO selalu HIGH atau selalu LOW meskipun CLK dimainkan, berarti ada masalah
   pinMode(EC_MISO, INPUT_PULLUP);
   bool initialMISO = digitalRead(EC_MISO);
   
@@ -30,7 +27,7 @@ void scanSPILines() {
   
   // Analisa sederhana
   if (initialMISO == HIGH && dummy == 0xFF) {
-    report = "MISO: Stuck HIGH/Disconnected";
+    report = "MISO: Stuck HIGH";
   } else if (initialMISO == LOW && dummy == 0x00) {
     report = "MISO: Stuck LOW/Short to GND";
   } else {
@@ -59,21 +56,18 @@ void sendResponse(uint8_t cmd, String msg) {
 uint8_t EC_SPI_Transfer(uint8_t data) {
     uint8_t receivedData = 0;
     for (int i = 7; i >= 0; i--) {
-        
         // MOSI
         digitalWrite(EC_MOSI, (data & (1 << i)) ? HIGH : LOW);
         // Clock High
         digitalWrite(EC_CLK, HIGH); 
-        delay(2);
-        // Baca MISO
-        // Clock Low
-        digitalRead(EC_MISO)==HIGH ? receivedData |= (1<<i) : receivedData |= (0<<i);
+        delayMicroseconds(10);
+        // Baca MISO   
+        if (digitalRead(EC_MISO)) {
+            receivedData |= (1 << i);
+        }
+                // Clock Low
         digitalWrite(EC_CLK, LOW);
-        
-//        if (digitalRead(EC_MISO)) {
-//            receivedData |= (1 << i);
-//        }
-        delay(2);
+        delayMicroseconds(10);
     }
     return receivedData;
 }
@@ -86,7 +80,7 @@ void executeCommand(uint8_t cmd, uint8_t* data, uint8_t len) {
       digitalWrite(2,HIGH);
       break;
 
-    case CMD_GET_ID:
+    case CMD_GET_ID:{
       uint8_t id[3];
       digitalWrite(EC_CS, LOW);    // Aktifkan Chip
       EC_SPI_Transfer(0x9F);       // Perintah JEDEC ID
@@ -94,29 +88,49 @@ void executeCommand(uint8_t cmd, uint8_t* data, uint8_t len) {
       id[1] = EC_SPI_Transfer(0x00); // Memory Type
       id[2] = EC_SPI_Transfer(0x00); // Capacity
       digitalWrite(EC_CS, HIGH);   // Matikan Chip
-  //    String out = InToStr(id[0])+char(id[1])+char(id[2]);
-    
       // Kirim hasil ke Lazarus dalam format Hex String
-//      String hexID = "";
-//      for(int i=0; i<3; i++) {
-//          if(id[i] < 0x10) hexID += "0";
-//          hexID += String(id[i], HEX);
-//      }
-//      hexID.toUpperCase();
-//      sendResponse(CMD_GET_ID, hexID);
-//      sendResponse(CMD_GET_ID, manID);
-      sendResponse(CMD_GET_ID, String(id[0]));
-      // Panggil fungsi SPI Bit-Banging yang kita buat sebelumnya
-      // Kirim balik ID chip ke Lazarus
+      String hexID = "";
+      for(int i=0; i<3; i++) {
+          if(id[i] < 0x10) hexID += "0";
+          hexID += String(id[i], HEX);
+      }
+      hexID.toUpperCase();
+      sendResponse(CMD_GET_ID, hexID);
       break;
-      
+    }
     case CMD_WRITE_BLOCK:
       // Tulis data dari buffer ke Chip EC
       sendResponse(CMD_WRITE_BLOCK, "Write OK");
       break;
+//
+//    case CMD_READ_BLOCK: {
+//      // Alamat dikirim 3 byte dari PC
+//      uint32_t addr = ((uint32_t)data[0] << 16) | ((uint32_t)data[1] << 8) | data[2];
+//    
+//      digitalWrite(EC_CS, LOW);
+//      EC_SPI_Transfer(0x03);             // Command: Read Data
+//      EC_SPI_Transfer((addr >> 16) & 0xFF); // Address High
+//      EC_SPI_Transfer((addr >> 8) & 0xFF);  // Address Mid
+//      EC_SPI_Transfer(addr & 0xFF);         // Address Low
+//    
+//      // Kirim Header Respon (Header, CMD, Len=0 sebagai tanda blok 256 byte)
+//      Serial.write(HEADER_BYTE);
+//      Serial.write(CMD_READ_BLOCK);
+//      Serial.write(0); 
+//    
+//      uint8_t checksum = HEADER_BYTE ^ CMD_READ_BLOCK ^ 0;
+//    
+//      for (int i = 0; i < 256; i++) {
+//          uint8_t b = EC_SPI_Transfer(0x00); // Baca 1 byte
+//          Serial.write(b);
+//          checksum ^= b;
+//      }
+//      Serial.write(checksum);            // Kirim Checksum akhir
+//      digitalWrite(EC_CS, HIGH);
+//      break;
+//    }
 
     case CMD_SCAN:
-    //sendResponse(0x04, "ScanOK");
      scanSPILines();
       break;
   }
@@ -129,7 +143,7 @@ void setup() {
   pinMode(EC_CS, OUTPUT); // CS
   pinMode(EC_CLK, OUTPUT); // CLK
   pinMode(EC_MOSI, OUTPUT); // MOSI
-  pinMode(EC_MISO, INPUT);  // MISO
+  pinMode(EC_MISO, INPUT_PULLUP); //MISO
   pinMode(2,OUTPUT); //connect indicator
   pinMode(3,OUTPUT); //run indicator
 
