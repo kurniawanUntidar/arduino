@@ -7,6 +7,8 @@
 #define CMD_READ_BLOCK   0x03
 #define CMD_WRITE_BLOCK  0x04
 #define CMD_SCAN         0x07
+#define RUN_LED          3
+#define CONNECT_LED      2
 
 // Definisikan Pin (Bisa dipindah sesuai kebutuhan konektor)
 const int EC_CS   = 10;
@@ -76,13 +78,18 @@ uint8_t EC_SPI_Transfer(uint8_t data) {
 void executeCommand(uint8_t cmd, uint8_t* data, uint8_t len) {
   switch (cmd) {
     case CMD_CHECK_CONN:
+       digitalWrite(RUN_LED,HIGH);
       sendResponse(CMD_CHECK_CONN, "Device Connected");
-      digitalWrite(2,HIGH);
+      digitalWrite(CONNECT_LED,HIGH);
+      digitalWrite(RUN_LED,LOW);
       break;
 
     case CMD_GET_ID:{
+      digitalWrite(RUN_LED,HIGH);
       uint8_t id[3];
       digitalWrite(EC_CS, LOW);    // Aktifkan Chip
+//      EC_SPI_Transfer(0x66);       // Enable Reset
+//      EC_SPI_Transfer(0x99);       // Reset Device
       EC_SPI_Transfer(0x9F);       // Perintah JEDEC ID
       id[0] = EC_SPI_Transfer(0x00); // Manufacturer ID
       id[1] = EC_SPI_Transfer(0x00); // Memory Type
@@ -96,39 +103,40 @@ void executeCommand(uint8_t cmd, uint8_t* data, uint8_t len) {
       }
       hexID.toUpperCase();
       sendResponse(CMD_GET_ID, hexID);
+      digitalWrite(RUN_LED,LOW);
       break;
     }
     case CMD_WRITE_BLOCK:
       // Tulis data dari buffer ke Chip EC
       sendResponse(CMD_WRITE_BLOCK, "Write OK");
       break;
-//
-//    case CMD_READ_BLOCK: {
-//      // Alamat dikirim 3 byte dari PC
-//      uint32_t addr = ((uint32_t)data[0] << 16) | ((uint32_t)data[1] << 8) | data[2];
-//    
-//      digitalWrite(EC_CS, LOW);
-//      EC_SPI_Transfer(0x03);             // Command: Read Data
-//      EC_SPI_Transfer((addr >> 16) & 0xFF); // Address High
-//      EC_SPI_Transfer((addr >> 8) & 0xFF);  // Address Mid
-//      EC_SPI_Transfer(addr & 0xFF);         // Address Low
-//    
-//      // Kirim Header Respon (Header, CMD, Len=0 sebagai tanda blok 256 byte)
-//      Serial.write(HEADER_BYTE);
-//      Serial.write(CMD_READ_BLOCK);
-//      Serial.write(0); 
-//    
-//      uint8_t checksum = HEADER_BYTE ^ CMD_READ_BLOCK ^ 0;
-//    
-//      for (int i = 0; i < 256; i++) {
-//          uint8_t b = EC_SPI_Transfer(0x00); // Baca 1 byte
-//          Serial.write(b);
-//          checksum ^= b;
-//      }
-//      Serial.write(checksum);            // Kirim Checksum akhir
-//      digitalWrite(EC_CS, HIGH);
-//      break;
-//    }
+
+    case CMD_READ_BLOCK: {
+      // Alamat dikirim 3 byte dari PC
+      uint32_t addr = ((uint32_t)data[0] << 16) | ((uint32_t)data[1] << 8) | data[2];
+    
+      digitalWrite(EC_CS, LOW);
+      EC_SPI_Transfer(0x03);             // Command: Read Data
+      EC_SPI_Transfer((addr >> 16) & 0xFF); // Address High
+      EC_SPI_Transfer((addr >> 8) & 0xFF);  // Address Mid
+      EC_SPI_Transfer(addr & 0xFF);         // Address Low
+    
+      // Kirim Header Respon (Header, CMD, Len=0 sebagai tanda blok 256 byte)
+      Serial.write(HEADER_BYTE);
+      Serial.write(CMD_READ_BLOCK);
+      Serial.write(0); 
+    
+      uint8_t checksum = HEADER_BYTE ^ CMD_READ_BLOCK ^ 0;
+    
+      for (int i = 0; i < 256; i++) {
+          uint8_t b = EC_SPI_Transfer(0x00); // Baca 1 byte
+          Serial.write(b);
+          checksum ^= b;
+      }
+      Serial.write(checksum);            // Kirim Checksum akhir
+      digitalWrite(EC_CS, HIGH);
+      break;
+    }
 
     case CMD_SCAN:
      scanSPILines();
@@ -144,8 +152,8 @@ void setup() {
   pinMode(EC_CLK, OUTPUT); // CLK
   pinMode(EC_MOSI, OUTPUT); // MOSI
   pinMode(EC_MISO, INPUT_PULLUP); //MISO
-  pinMode(2,OUTPUT); //connect indicator
-  pinMode(3,OUTPUT); //run indicator
+  pinMode(CONNECT_LED,OUTPUT); //connect indicator
+  pinMode(RUN_LED,OUTPUT); //run indicator
 
 }
 
@@ -158,10 +166,18 @@ void loop() {
       uint8_t len = Serial.read();//Serial.write(len);
       uint8_t buffer[256];
       uint8_t checksum = HEADER_BYTE ^ cmd ^ len;
+      uint8_t receivedChecksum;
 
-      
+      if (cmd == CMD_READ_BLOCK){
+        buffer[0] = Serial.read();  //Address 1
+        buffer[1] = Serial.read();  //Address 2
+        buffer[3] = Serial.read();
+        receivedChecksum = Serial.read();
+      } 
+      else{
      // while (!Serial.available()){
-      uint8_t receivedChecksum = Serial.read();//Serial.write(receivedChecksum );
+        receivedChecksum = Serial.read();//Serial.write(receivedChecksum );
+      }
        if (checksum == receivedChecksum) {
         executeCommand(cmd, buffer, len);
       } else {
