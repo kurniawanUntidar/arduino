@@ -1,11 +1,12 @@
 #define HEADER_BYTE 0xAA
 
 // Daftar Command (Harus sama dengan di Lazarus)
-#define CMD_CHECK_CONN   0x06
+
 #define CMD_GET_ID       0x01
-#define CMD_SET_PINS     0x05
 #define CMD_READ_BLOCK   0x03
 #define CMD_WRITE_BLOCK  0x04
+#define CMD_SET_PINS     0x05
+#define CMD_CHECK_CONN   0x06
 #define CMD_SCAN         0x07
 #define RUN_LED          3
 #define CONNECT_LED      2
@@ -62,14 +63,14 @@ uint8_t EC_SPI_Transfer(uint8_t data) {
         digitalWrite(EC_MOSI, (data & (1 << i)) ? HIGH : LOW);
         // Clock High
         digitalWrite(EC_CLK, HIGH); 
-        delayMicroseconds(10);
+        //delayMicroseconds(10);
         // Baca MISO   
         if (digitalRead(EC_MISO)) {
             receivedData |= (1 << i);
         }
                 // Clock Low
         digitalWrite(EC_CLK, LOW);
-        delayMicroseconds(10);
+        //delayMicroseconds(10);
     }
     return receivedData;
 }
@@ -158,32 +159,33 @@ void setup() {
 }
 
 void loop() {
-
- if (Serial.available() > 3) { // Minimal Header + Cmd + Len
+  // Kita butuh minimal 4 byte: Header(1), Cmd(1), Len(1), Checksum(1)
+  if (Serial.available() >= 4) {
     if (Serial.read() == HEADER_BYTE) {
-      //Serial.write(HEADER_BYTE);
-      uint8_t cmd = Serial.read();//Serial.write(cmd);
-      uint8_t len = Serial.read();//Serial.write(len);
-      uint8_t buffer[256];
-      uint8_t checksum = HEADER_BYTE ^ cmd ^ len;
-      uint8_t receivedChecksum;
+      uint8_t cmd = Serial.read();
+      uint8_t len = Serial.read();
+      uint8_t buffer[256]; // Buffer untuk menampung parameter (seperti alamat)
+      uint8_t calculatedChecksum = HEADER_BYTE ^ cmd ^ len;
 
-      if (cmd == CMD_READ_BLOCK){
-        buffer[0] = Serial.read();  //Address 1
-        buffer[1] = Serial.read();  //Address 2
-        buffer[3] = Serial.read();
-        receivedChecksum = Serial.read();
-      } 
-      else{
-     // while (!Serial.available()){
-        receivedChecksum = Serial.read();//Serial.write(receivedChecksum );
+      // 1. Ambil data parameter sesuai nilai 'len'
+      for (int i = 0; i < len; i++) {
+        // Tunggu sampai byte data benar-benar masuk
+        while (Serial.available() == 0); 
+        buffer[i] = Serial.read();
+        calculatedChecksum ^= buffer[i];
       }
-       if (checksum == receivedChecksum) {
+
+      // 2. Ambil byte Checksum dari pengirim (Lazarus)
+      while (Serial.available() == 0);
+      uint8_t receivedChecksum = Serial.read();
+
+      // 3. Validasi: Jika cocok, eksekusi perintah
+      if (calculatedChecksum == receivedChecksum) {
         executeCommand(cmd, buffer, len);
       } else {
-        sendResponse(0xEE, "Error Checksum"); // Kode error
+        // Jika gagal, kirim respon error ke Lazarus
+        sendResponse(0xEE, "Checksum Error");
       }
-    //  }
     }
- }
+  }
 }
